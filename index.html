@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TTS Presentation — プレゼンを声で届ける</title>
+<meta name="description" content="Text-to-Speech でプレゼンテーションを自動読み上げ。声の選択、感情表現、プレゼン時間に合わせたスピード調整が可能なブラウザアプリ。"/>
+<meta property="og:title" content="TTS Presentation — プレゼンを声で届ける"/>
+<meta property="og:description" content="Text-to-Speech でプレゼンテーションを自動読み上げ。声の選択、感情表現、プレゼン時間に合わせたスピード調整が可能。"/>
+<meta property="og:type" content="website"/>
+<meta property="og:locale" content="ja_JP"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;700;800&family=Noto+Sans+JP:wght@300;400;500;700&family=Cormorant+Garamond:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet"/>
+<style>
+/* ── CSS Custom Properties ── */
+:root{
+  --bg:#f4f1ed;
+  --white:#ffffff;
+  --ink:#1e1a16;
+  --accent:#3a6ea5;
+  --accent-l:#c6ddf0;
+  --accent-d:#1f4470;
+  --sage:#5a8a6e;
+  --warm:#c95f2a;
+  --muted:#8a8078;
+  --border:#ddd6cc;
+  --shadow:rgba(30,26,22,.08);
+  --radius:12px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',sans-serif;font-weight:300;font-size:15px;}
+
+/* ── Background Canvas ── */
+#bg-canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;}
+
+/* ── Stage ── */
+#stage{position:relative;width:100vw;height:100vh;overflow:hidden;z-index:1;}
+
+/* ── Slides ── */
+.slide{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;
+  padding:80px 64px 100px;opacity:0;pointer-events:none;
+  text-align:center;
+}
+.slide.active{opacity:1;pointer-events:all;}
+.slide.enR{animation:inR .5s cubic-bezier(.22,1,.36,1) forwards;}
+.slide.exL{animation:outL .5s cubic-bezier(.22,1,.36,1) forwards;}
+.slide.enL{animation:inL .5s cubic-bezier(.22,1,.36,1) forwards;}
+.slide.exR{animation:outR .5s cubic-bezier(.22,1,.36,1) forwards;}
+@keyframes inR{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes outL{from{transform:translateX(0);opacity:1}to{transform:translateX(-60px);opacity:0}}
+@keyframes inL{from{transform:translateX(-60px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes outR{from{transform:translateX(0);opacity:1}to{transform:translateX(60px);opacity:0}}
+
+/* ── Typography ── */
+.pill{display:inline-block;background:var(--accent-l);color:var(--accent-d);font-size:11px;font-weight:700;letter-spacing:.15em;padding:6px 18px;border-radius:20px;margin-bottom:20px;}
+h1{font-family:'Shippori Mincho B1',serif;font-size:clamp(2rem,5vw,3.4rem);font-weight:800;line-height:1.3;margin-bottom:16px;}
+h2{font-family:'Shippori Mincho B1',serif;font-size:clamp(1.5rem,3.5vw,2.4rem);font-weight:700;line-height:1.35;margin-bottom:12px;}
+h1 .it,h2 .it{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:600;vertical-align:baseline;font-size:1.1em;padding:0 4px;}
+.sub{font-size:clamp(.95rem,1.8vw,1.15rem);color:var(--muted);max-width:640px;line-height:1.8;margin-bottom:24px;}
+
+/* ── Progress Bar ── */
+#prog{position:fixed;top:0;left:0;right:0;height:3px;background:var(--border);z-index:500;}
+#pbar{height:100%;background:linear-gradient(to right,var(--accent-l),var(--accent));transition:width .4s ease;}
+
+/* ── Top Logo ── */
+.top-logo{position:fixed;top:20px;left:26px;z-index:500;font-size:11px;letter-spacing:.13em;color:var(--muted);cursor:pointer;user-select:none;}
+
+/* ── Hint ── */
+#hint{
+  position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:500;
+  font-size:10px;letter-spacing:.13em;color:var(--muted);background:var(--white);
+  border:1px solid var(--border);padding:5px 16px;border-radius:20px;
+  box-shadow:0 2px 8px var(--shadow);transition:opacity .8s;white-space:nowrap;
+}
+#hint.gone{opacity:0;pointer-events:none;}
+
+/* ── Bottom Nav ── */
+#nav{
+  position:fixed;bottom:0;left:0;right:0;height:68px;z-index:500;
+  display:flex;align-items:center;justify-content:space-between;padding:0 48px;
+  background:linear-gradient(to top,rgba(244,241,237,.98) 60%,transparent);
+}
+.nbtn{
+  width:42px;height:42px;border-radius:50%;border:1.5px solid var(--border);
+  background:var(--white);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:16px;color:var(--ink);
+  box-shadow:0 2px 8px var(--shadow);transition:all .2s;user-select:none;
+}
+.nbtn:hover{border-color:var(--accent);color:var(--accent);}
+.nbtn:active{transform:scale(.92);}
+#dots{display:flex;gap:8px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--border);cursor:pointer;transition:all .3s;}
+.dot.on{background:var(--accent);transform:scale(1.3);}
+.counter{font-size:11px;color:var(--muted);letter-spacing:.1em;min-width:44px;text-align:center;}
+
+/* ── TTS Control Panel (right side) ── */
+#tts-panel{
+  position:fixed;top:14px;right:16px;z-index:600;
+  display:flex;flex-direction:row;gap:8px;align-items:center;
+}
+.tp-btn{
+  width:40px;height:40px;border-radius:50%;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  border:1.5px solid var(--border);background:var(--white);
+  color:var(--muted);font-size:15px;
+  box-shadow:0 2px 8px var(--shadow);transition:all .2s;
+  font-family:'Noto Sans JP',sans-serif;font-weight:700;
+}
+.tp-btn:hover{border-color:var(--accent);color:var(--accent);transform:scale(1.08);}
+.tp-btn:active{transform:scale(.92);}
+#tts-main-btn{
+  width:44px;height:44px;background:var(--accent);color:#fff;border-color:var(--accent);
+}
+#tts-main-btn:hover{background:var(--accent-d);border-color:var(--accent-d);box-shadow:0 4px 16px rgba(58,110,165,.35);}
+#tts-main-btn.speaking{background:var(--warm);border-color:var(--warm);}
+#tts-main-btn .icon{font-size:18px;margin-left:2px;}
+#tts-main-btn .btn-label{display:none;}
+#lang-toggle{
+  display:flex;align-items:center;gap:0;border-radius:20px;padding:0;width:auto;height:40px;
+  overflow:hidden;cursor:pointer;
+  border:1.5px solid var(--border);background:var(--white);
+  box-shadow:0 2px 8px var(--shadow);transition:all .2s;
+}
+#lang-toggle:hover{border-color:var(--accent);transform:scale(1.08);}
+#lang-toggle:active{transform:scale(.92);}
+#lang-toggle span{
+  padding:0 10px;font-size:10px;letter-spacing:.04em;
+  font-family:'Noto Sans JP',sans-serif;font-weight:700;
+  color:var(--muted);transition:all .25s;line-height:1;
+  display:flex;align-items:center;height:100%;
+}
+#lang-toggle span:first-child{border-radius:18px 0 0 18px;}
+#lang-toggle span:last-child{border-radius:0 18px 18px 0;}
+#lang-toggle span.active{background:var(--accent);color:#fff;}
+
+/* ── TTS Settings Drawer ── */
+#tts-drawer{
+  position:fixed;top:0;right:-400px;width:380px;height:100vh;z-index:700;
+  background:var(--white);border-left:1px solid var(--border);
+  box-shadow:-4px 0 24px var(--shadow);
+  display:flex;flex-direction:column;
+  transition:right .35s cubic-bezier(.22,1,.36,1);
+  overflow-y:auto;
+}
+#tts-drawer.open{right:0;}
+#tts-drawer-overlay{
+  position:fixed;inset:0;z-index:690;background:rgba(30,26,22,.2);
+  backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .3s;
+}
+#tts-drawer-overlay.open{opacity:1;pointer-events:all;}
+
+.drawer-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px 16px;border-bottom:1px solid var(--border);
+}
+.drawer-header h3{font-family:'Shippori Mincho B1',serif;font-size:16px;font-weight:700;}
+.drawer-close{
+  width:32px;height:32px;border-radius:50%;border:1px solid var(--border);
+  background:transparent;cursor:pointer;font-size:18px;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;transition:all .2s;
+}
+.drawer-close:hover{color:var(--ink);border-color:var(--ink);}
+
+.drawer-section{padding:20px 24px;border-bottom:1px solid var(--border);}
+.drawer-section:last-child{border-bottom:none;}
+.drawer-label{font-size:11px;font-weight:700;letter-spacing:.15em;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.drawer-label .emoji{font-size:14px;}
+
+/* Voice List */
+#voice-list{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;}
+.voice-item{
+  padding:8px 12px;border-radius:8px;cursor:pointer;
+  font-size:13px;display:flex;align-items:center;gap:8px;
+  border:1.5px solid transparent;transition:all .15s;
+}
+.voice-item:hover{background:var(--accent-l);}
+.voice-item.selected{border-color:var(--accent);background:var(--accent-l);font-weight:500;}
+.voice-lang{font-size:10px;color:var(--muted);background:var(--bg);padding:2px 8px;border-radius:10px;}
+
+/* Sliders */
+.slider-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.slider-row label{font-size:12px;min-width:80px;font-weight:500;}
+.slider-row input[type=range]{flex:1;accent-color:var(--accent);height:6px;}
+.slider-row .val{font-size:12px;font-weight:700;color:var(--accent);min-width:36px;text-align:right;font-family:'Cormorant Garamond',serif;font-size:16px;}
+
+/* Emotion Presets */
+.emotion-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.emotion-btn{
+  padding:10px 8px;border-radius:var(--radius);border:1.5px solid var(--border);
+  background:var(--white);cursor:pointer;text-align:center;
+  transition:all .2s;font-family:'Noto Sans JP',sans-serif;
+}
+.emotion-btn:hover{border-color:var(--accent);background:var(--accent-l);}
+.emotion-btn.active{border-color:var(--accent);background:var(--accent-l);box-shadow:0 2px 8px rgba(58,110,165,.15);}
+.emotion-btn .emo-icon{font-size:22px;display:block;margin-bottom:4px;}
+.emotion-btn .emo-name{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--ink);}
+
+/* Time Target */
+.time-target{display:flex;align-items:center;gap:12px;margin-top:8px;}
+.time-input{
+  width:70px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;
+  font-size:14px;font-weight:700;text-align:center;font-family:'Cormorant Garamond',serif;
+  color:var(--accent-d);
+}
+.time-input:focus{outline:none;border-color:var(--accent);}
+.time-unit{font-size:12px;color:var(--muted);}
+.time-calc{font-size:11px;color:var(--sage);font-weight:500;margin-top:6px;}
+
+/* Auto-play controls */
+.autoplay-row{display:flex;align-items:center;gap:12px;margin-top:10px;}
+.toggle-wrap{position:relative;width:44px;height:24px;cursor:pointer;}
+.toggle-wrap input{opacity:0;width:0;height:0;}
+.toggle-track{position:absolute;inset:0;background:var(--border);border-radius:12px;transition:background .2s;}
+.toggle-wrap input:checked+.toggle-track{background:var(--accent);}
+.toggle-knob{
+  position:absolute;top:2px;left:2px;width:20px;height:20px;
+  background:#fff;border-radius:50%;transition:transform .2s;
+  box-shadow:0 1px 4px var(--shadow);
+}
+.toggle-wrap input:checked~.toggle-knob{transform:translateX(20px);}
+.toggle-label{font-size:12px;font-weight:500;}
+
+/* ── Speaking Indicator ── */
+.speaking-indicator{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  z-index:550;display:flex;align-items:center;gap:10px;
+  background:var(--white);border:1.5px solid var(--accent);
+  padding:8px 20px;border-radius:24px;
+  box-shadow:0 4px 20px var(--shadow);
+  opacity:0;pointer-events:none;transition:all .3s;
+}
+.speaking-indicator.visible{opacity:1;pointer-events:all;}
+.wave-bars{display:flex;align-items:center;gap:3px;height:18px;}
+.wave-bars span{
+  width:3px;background:var(--accent);border-radius:2px;
+  animation:wave 1s ease-in-out infinite;
+}
+.wave-bars span:nth-child(1){height:6px;animation-delay:0s;}
+.wave-bars span:nth-child(2){height:12px;animation-delay:.15s;}
+.wave-bars span:nth-child(3){height:18px;animation-delay:.3s;}
+.wave-bars span:nth-child(4){height:12px;animation-delay:.45s;}
+.wave-bars span:nth-child(5){height:6px;animation-delay:.6s;}
+@keyframes wave{0%,100%{transform:scaleY(.4);}50%{transform:scaleY(1);}}
+.speaking-text{font-size:12px;font-weight:500;color:var(--ink);}
+.speaking-stop{
+  background:var(--warm);color:#fff;border:none;
+  padding:4px 12px;border-radius:16px;cursor:pointer;
+  font-size:11px;font-weight:700;transition:all .15s;
+  font-family:'Noto Sans JP',sans-serif;
+}
+.speaking-stop:hover{background:#b5521e;}
+
+/* ── Highlight word ── */
+.word-highlight{
+  background:var(--accent-l);border-radius:4px;
+  padding:0 2px;transition:background .15s;
+}
+
+/* ── Slide-specific ── */
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:800px;margin-top:20px;}
+.feature-card{
+  background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius);
+  padding:24px 16px;text-align:center;transition:all .25s;cursor:default;
+}
+.feature-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 8px 24px var(--shadow);}
+.feature-card .fc-icon{font-size:32px;margin-bottom:8px;}
+.feature-card .fc-title{font-size:13px;font-weight:700;margin-bottom:4px;}
+.feature-card .fc-desc{font-size:11px;color:var(--muted);line-height:1.5;}
+
+.demo-area{
+  background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius);
+  padding:32px;max-width:700px;width:100%;margin-top:16px;text-align:left;
+}
+.demo-area p{font-size:14px;line-height:2;color:var(--ink);}
+.demo-area .highlight-line{transition:all .2s;padding:2px 4px;border-radius:4px;display:inline;}
+
+.big{font-family:'Cormorant Garamond',serif;font-size:clamp(2.2rem,6vw,4rem);font-weight:600;font-style:italic;line-height:1.2;margin-bottom:16px;color:var(--accent-d);}
+
+.link-card{
+  display:inline-flex;align-items:center;gap:10px;
+  background:var(--white);border:1.5px solid var(--border);
+  padding:14px 28px;border-radius:var(--radius);margin-top:20px;
+  text-decoration:none;color:var(--ink);font-size:13px;font-weight:500;
+  transition:all .2s;
+}
+.link-card:hover{border-color:var(--accent);box-shadow:0 4px 16px var(--shadow);}
+
+/* ── Mouse Hover Highlight ── */
+.slide h1,.slide h2,.slide .sub,.slide .pill,.slide .eyebrow,
+.slide .fc-title,.slide .fc-desc,.slide .big,.slide .emo-name,
+.slide .link-card,.slide [data-i18n]{cursor:default;transition:transform .2s ease,color .2s ease,background .2s ease;transform-origin:center center;display:inline-block;border-radius:4px;padding:2px 6px;}
+.slide h1:hover,.slide h2:hover,.slide .sub:hover,.slide .pill:hover,.slide .eyebrow:hover,
+.slide .fc-title:hover,.slide .fc-desc:hover,.slide .big:hover,.slide .emo-name:hover,
+.slide .link-card:hover{transform:scale(1.22);background:var(--accent);color:#fff;}
+
+/* ── Reading Highlight (line-by-line) ── */
+.reading-highlight{background:var(--accent)!important;color:#fff!important;box-shadow:0 4px 16px rgba(58,110,165,.25);transition:background .4s,color .4s,box-shadow .4s,transform .15s ease!important;border-radius:6px!important;}
+.reading-highlight .fc-title,.reading-highlight .fc-desc,.reading-highlight .emo-name,.reading-highlight .sub,.reading-highlight span,.reading-highlight p{color:#fff!important;}
+.reading-highlight .fc-icon{filter:none;}
+
+/* ── Script Editor ── */
+#script-editor{
+  position:fixed;bottom:68px;left:50%;transform:translateX(-50%);
+  width:min(680px,calc(100vw - 120px));z-index:550;
+  background:var(--white);border:1.5px solid var(--border);
+  border-radius:var(--radius) var(--radius) 0 0;
+  box-shadow:0 -4px 24px var(--shadow);
+  display:flex;flex-direction:column;
+  max-height:220px;
+  transform:translateX(-50%) translateY(100%);opacity:0;pointer-events:none;
+  transition:transform .35s cubic-bezier(.22,1,.36,1),opacity .25s;
+}
+#script-editor.open{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:all;}
+#stage.script-open .slide{padding-bottom:280px;transition:padding .35s ease;}
+#script-editor-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+#script-editor-header .se-title{
+  font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+#script-editor-header .se-slide{font-size:11px;color:var(--accent);font-weight:700;}
+#script-editor-close{
+  width:28px;height:28px;border-radius:50%;border:1px solid var(--border);
+  background:transparent;cursor:pointer;font-size:15px;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;transition:all .2s;
+}
+#script-editor-close:hover{color:var(--ink);border-color:var(--ink);}
+#script-textarea{
+  width:100%;min-height:80px;max-height:120px;resize:vertical;
+  border:none;outline:none;padding:12px 16px;
+  font-family:'Noto Sans JP',sans-serif;font-size:13px;line-height:1.8;
+  color:var(--ink);background:transparent;overflow-y:auto;
+}
+#script-textarea::placeholder{color:var(--muted);}
+#script-editor-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);flex-shrink:0;
+}
+#script-char-count{font-family:'Cormorant Garamond',serif;font-size:14px;font-weight:600;color:var(--accent);}
+
+/* ── Copyright Footer ── */
+#copyright{
+  position:fixed;bottom:6px;left:0;right:0;z-index:501;
+  text-align:center;
+}
+#copyright a{
+  font-family:'Noto Sans JP',sans-serif;font-size:10px;letter-spacing:.06em;
+  color:var(--muted);text-decoration:none;opacity:.55;transition:opacity .2s;
+}
+#copyright a:hover{opacity:1;color:var(--accent);}
+
+/* ── Responsive ── */
+@media(max-width:700px){
+  .slide{padding:60px 24px 100px;}
+  .feature-grid{grid-template-columns:1fr;max-width:320px;}
+  #tts-drawer{width:100vw;right:-100vw;}
+  #nav{padding:0 20px;}
+  h1{font-size:clamp(1.6rem,6vw,2.2rem);}
+  #lang-toggle{height:32px;}
+  #lang-toggle span{padding:4px 7px;font-size:9px;}
+}
+</style>
+</head>
+<body>
+
+<!-- Background Canvas -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- Stage -->
+<div id="stage">
+
+  <!-- Slide 1: Title -->
+  <div class="slide active" id="s1">
+    <div class="pill" data-i18n="s1.pill">TTS PRESENTATION</div>
+    <h1 data-i18n="s1.h1">プレゼンを<span class="it">声</span>で届ける。</h1>
+    <p class="sub" data-i18n="s1.sub">Text-to-Speech でスライドを自動読み上げ。<br>声を選び、感情を込め、時間に合わせる — すべてブラウザだけで。</p>
+  </div>
+
+  <!-- Slide 2: Problem -->
+  <div class="slide" id="s2">
+    <div class="pill" data-i18n="s2.pill">WHY TTS?</div>
+    <h2 data-i18n="s2.h2">プレゼンの悩み、ありませんか？</h2>
+    <div class="feature-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="feature-card"><div class="fc-icon">😰</div><div class="fc-title" data-i18n="s2.c1.t">人前で話すのが苦手</div><div class="fc-desc" data-i18n="s2.c1.d">緊張して言葉が出ない、早口になってしまう</div></div>
+      <div class="feature-card"><div class="fc-icon">⏱️</div><div class="fc-title" data-i18n="s2.c2.t">時間配分が難しい</div><div class="fc-desc" data-i18n="s2.c2.d">5分と言われたのに3分で終わった…</div></div>
+      <div class="feature-card"><div class="fc-icon">🌍</div><div class="fc-title" data-i18n="s2.c3.t">多言語での発表</div><div class="fc-desc" data-i18n="s2.c3.d">英語プレゼンの発音に自信がない</div></div>
+      <div class="feature-card"><div class="fc-icon">♿</div><div class="fc-title" data-i18n="s2.c4.t">アクセシビリティ</div><div class="fc-desc" data-i18n="s2.c4.d">音声が必要な場面でテキストだけでは不十分</div></div>
+    </div>
+  </div>
+
+  <!-- Slide 3: Technology -->
+  <div class="slide" id="s3">
+    <div class="pill" data-i18n="s3.pill">TECHNOLOGY</div>
+    <h2 data-i18n="s3.h2">🔧 技術のしくみ</h2>
+    <p class="sub" data-i18n="s3.sub">ブラウザ内蔵の Web Speech API で動作。<br>さらに高品質な音声が必要なら Azure へ。</p>
+    <div class="feature-grid" style="grid-template-columns:repeat(2,1fr);max-width:700px;">
+      <div class="feature-card">
+        <div class="fc-icon">🌐</div>
+        <div class="fc-title" data-i18n="s3.c1.t">Web Speech API</div>
+        <div class="fc-desc" data-i18n="s3.c1.d">ブラウザに内蔵された無料の音声エンジン。<br>インストール不要、APIキー不要。<br>このアプリはこれだけで動いています。</div>
+      </div>
+      <div class="feature-card">
+        <div class="fc-icon">☁️</div>
+        <div class="fc-title" data-i18n="s3.c2.t">Azure Text to Speech</div>
+        <div class="fc-desc" data-i18n="s3.c2.d">マイクロソフトのクラウド音声サービス。<br>400以上のニューラル音声、感情表現、SSML対応。<br>プロ品質の音声が必要な場合に。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 4: Features Overview -->
+  <div class="slide" id="s4">
+    <div class="pill" data-i18n="s4.pill">FEATURES</div>
+    <h2 data-i18n="s4.h2">3つの魔法</h2>
+    <p class="sub" data-i18n="s4.sub">ブラウザの Web Speech API だけで、ここまでできる。</p>
+    <div class="feature-grid">
+      <div class="feature-card"><div class="fc-icon">🎙️</div><div class="fc-title" data-i18n="s4.f1.t">声を選ぶ</div><div class="fc-desc" data-i18n="s4.f1.d">日本語・英語・多言語の音声から好みの声を選択</div></div>
+      <div class="feature-card"><div class="fc-icon">🎭</div><div class="fc-title" data-i18n="s4.f2.t">感情を込める</div><div class="fc-desc" data-i18n="s4.f2.d">落ち着き・情熱・やさしさなど6種類のプリセット</div></div>
+      <div class="feature-card"><div class="fc-icon">⏰</div><div class="fc-title" data-i18n="s4.f3.t">時間に合わせる</div><div class="fc-desc" data-i18n="s4.f3.d">目標時間を設定すれば最適な読み上げ速度を自動計算</div></div>
+    </div>
+  </div>
+
+  <!-- Slide 5: Voice Selection Demo -->
+  <div class="slide" id="s5">
+    <div class="pill" data-i18n="s5.pill">FEATURE 01</div>
+    <h2 data-i18n="s5.h2">🎙️ 声を選ぶ</h2>
+    <p class="sub" data-i18n="s5.sub">右上の⚙ボタンから音声設定を開いて、好みの声を試してみてください。</p>
+    <div class="demo-area" id="voice-demo">
+      <p data-i18n="s5.demo">この文章が、選んだ声で読み上げられます。日本語でも英語でも、ブラウザが対応するすべての言語の音声が使えます。お気に入りの声を見つけてみてください。</p>
+    </div>
+  </div>
+
+  <!-- Slide 6: Emotion Demo -->
+  <div class="slide" id="s6">
+    <div class="pill" data-i18n="s6.pill">FEATURE 02</div>
+    <h2 data-i18n="s6.h2">🎭 感情を込める</h2>
+    <p class="sub" data-i18n="s6.sub">ピッチと音量、スピードの組み合わせで、声に表情をつけます。</p>
+    <div class="emotion-grid" style="max-width:500px;">
+      <button class="emotion-btn" data-emotion="calm"><span class="emo-icon">🧘</span><span class="emo-name" data-i18n="emo.calm">落ち着き</span></button>
+      <button class="emotion-btn" data-emotion="passion"><span class="emo-icon">🔥</span><span class="emo-name" data-i18n="emo.passion">情熱</span></button>
+      <button class="emotion-btn" data-emotion="gentle"><span class="emo-icon">🌸</span><span class="emo-name" data-i18n="emo.gentle">やさしさ</span></button>
+      <button class="emotion-btn" data-emotion="serious"><span class="emo-icon">📐</span><span class="emo-name" data-i18n="emo.serious">真剣</span></button>
+      <button class="emotion-btn" data-emotion="cheerful"><span class="emo-icon">🎉</span><span class="emo-name" data-i18n="emo.cheerful">明るさ</span></button>
+      <button class="emotion-btn" data-emotion="dramatic"><span class="emo-icon">🎬</span><span class="emo-name" data-i18n="emo.dramatic">ドラマ</span></button>
+    </div>
+  </div>
+
+  <!-- Slide 7: Time Control Demo -->
+  <div class="slide" id="s7">
+    <div class="pill" data-i18n="s7.pill">FEATURE 03</div>
+    <h2 data-i18n="s7.h2">⏰ 時間に合わせる</h2>
+    <p class="sub" data-i18n="s7.sub">「5分のプレゼンにしたい」と設定すれば、全スライドの文字数から最適な読み上げ速度を自動計算。練習いらずで時間ピッタリ。</p>
+    <div class="demo-area">
+      <div style="display:flex;align-items:center;gap:16px;justify-content:center;margin-bottom:16px;">
+        <span style="font-size:13px;font-weight:500;" data-i18n="s7.target">目標時間:</span>
+        <input type="number" id="demo-time" class="time-input" value="5" min="1" max="60"/>
+        <span class="time-unit" data-i18n="s7.min">分</span>
+      </div>
+      <p class="time-calc" id="demo-calc" style="text-align:center;" data-i18n="s7.calc">全スライドの総文字数から自動で速度を調整します</p>
+    </div>
+  </div>
+
+  <!-- Slide 8: Ending -->
+  <div class="slide" id="s8">
+    <div class="big" data-i18n="s8.big">Let your slides speak.</div>
+    <p class="sub" data-i18n="s8.sub">GitHub Copilot が生成し、ブラウザが読み上げる。<br>あなたはメッセージを考えるだけ。あとは、声に託そう。</p>
+    <a class="link-card" href="https://github.com/FukudaRikako/copilot-speaks-presentations" target="_blank" rel="noopener noreferrer">
+      <span>⭐</span>
+      <span data-i18n="s8.link">GitHub でスターを付ける</span>
+    </a>
+  </div>
+
+</div><!-- /stage -->
+
+<!-- Progress Bar -->
+<div id="prog"><div id="pbar" style="width:12.5%"></div></div>
+
+<!-- Top Logo -->
+<div class="top-logo" data-i18n="ui.logo">TTS PRESENTATION</div>
+
+<!-- Hint -->
+<div id="hint" data-i18n="ui.hint">← → キーまたはスワイプでスライドを移動　|　▶ で読み上げ開始</div>
+
+<!-- TTS Panel -->
+<div id="tts-panel">
+  <div id="lang-toggle" aria-label="Toggle language"><span class="active">JA</span><span>EN</span><span>IT</span></div>
+  <button id="script-editor-btn" class="tp-btn" aria-label="Edit talk script" style="font-size:16px;">📝</button>
+  <button id="tts-settings-btn" class="tp-btn" aria-label="TTS settings">⚙</button>
+  <button id="tts-main-btn" class="tp-btn" aria-label="Read slide aloud">
+    <span class="icon">▶</span>
+    <span id="tts-btn-label" class="btn-label" data-i18n="ui.play">読み上げ</span>
+  </button>
+</div>
+
+<!-- TTS Drawer Overlay -->
+<div id="tts-drawer-overlay"></div>
+
+<!-- TTS Settings Drawer -->
+<div id="tts-drawer">
+  <div class="drawer-header">
+    <h3 data-i18n="ui.settings">🔊 音声設定</h3>
+    <button class="drawer-close" id="drawer-close-btn">✕</button>
+  </div>
+
+  <!-- Voice Selection -->
+  <div class="drawer-section">
+    <div class="drawer-label"><span class="emoji">🎙️</span> <span data-i18n="ui.voiceLabel">音声を選ぶ</span></div>
+    <div id="voice-filter" style="margin-bottom:8px;">
+      <input type="text" id="voice-search" placeholder="声を検索..." style="width:100%;padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;" data-i18n-placeholder="ui.voiceSearch"/>
+    </div>
+    <div id="voice-list"></div>
+  </div>
+
+  <!-- Emotion Presets -->
+  <div class="drawer-section">
+    <div class="drawer-label"><span class="emoji">🎭</span> <span data-i18n="ui.emotionLabel">感情表現</span></div>
+    <div class="emotion-grid" id="drawer-emotions">
+      <button class="emotion-btn active" data-emotion="calm"><span class="emo-icon">🧘</span><span class="emo-name" data-i18n="emo.calm">落ち着き</span></button>
+      <button class="emotion-btn" data-emotion="passion"><span class="emo-icon">🔥</span><span class="emo-name" data-i18n="emo.passion">情熱</span></button>
+      <button class="emotion-btn" data-emotion="gentle"><span class="emo-icon">🌸</span><span class="emo-name" data-i18n="emo.gentle">やさしさ</span></button>
+      <button class="emotion-btn" data-emotion="serious"><span class="emo-icon">📐</span><span class="emo-name" data-i18n="emo.serious">真剣</span></button>
+      <button class="emotion-btn" data-emotion="cheerful"><span class="emo-icon">🎉</span><span class="emo-name" data-i18n="emo.cheerful">明るさ</span></button>
+      <button class="emotion-btn" data-emotion="dramatic"><span class="emo-icon">🎬</span><span class="emo-name" data-i18n="emo.dramatic">ドラマ</span></button>
+    </div>
+  </div>
+
+  <!-- Manual Sliders -->
+  <div class="drawer-section">
+    <div class="drawer-label"><span class="emoji">🎛️</span> <span data-i18n="ui.manualLabel">手動調整</span></div>
+    <div class="slider-row">
+      <label data-i18n="ui.rate">スピード</label>
+      <input type="range" id="rate-slider" min="0.3" max="2.5" step="0.1" value="2.0"/>
+      <span class="val" id="rate-val">2.0</span>
+    </div>
+    <div class="slider-row">
+      <label data-i18n="ui.pitch">ピッチ</label>
+      <input type="range" id="pitch-slider" min="0.3" max="2.0" step="0.1" value="1.0"/>
+      <span class="val" id="pitch-val">1.0</span>
+    </div>
+    <div class="slider-row">
+      <label data-i18n="ui.volume">音量</label>
+      <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="0.9"/>
+      <span class="val" id="volume-val">0.9</span>
+    </div>
+  </div>
+
+  <!-- Time Target -->
+  <div class="drawer-section">
+    <div class="drawer-label"><span class="emoji">⏰</span> <span data-i18n="ui.timeLabel">プレゼン時間に合わせる</span></div>
+    <div class="time-target">
+      <input type="number" id="target-time" class="time-input" value="5" min="1" max="60"/>
+      <span class="time-unit" data-i18n="ui.min">分</span>
+      <button id="calc-speed-btn" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;" data-i18n="ui.calcBtn">自動計算</button>
+    </div>
+    <p class="time-calc" id="time-result"></p>
+  </div>
+
+  <!-- Auto-play -->
+  <div class="drawer-section">
+    <div class="drawer-label"><span class="emoji">🔄</span> <span data-i18n="ui.autoLabel">自動再生</span></div>
+    <div class="autoplay-row">
+      <label class="toggle-wrap">
+        <input type="checkbox" id="autoplay-toggle" checked/>
+        <span class="toggle-track"></span>
+        <span class="toggle-knob"></span>
+      </label>
+      <span class="toggle-label" data-i18n="ui.autoDesc">読み上げ終了後、自動で次のスライドへ</span>
+    </div>
+  </div>
+</div>
+
+<!-- Script Editor -->
+<div id="script-editor">
+  <div id="script-editor-header">
+    <span class="se-title">📝 <span data-i18n="ui.scriptLabel">トークスクリプト</span> — <span class="se-slide" id="se-slide-num">Slide 1</span></span>
+    <button id="script-editor-close">✕</button>
+  </div>
+  <textarea id="script-textarea" placeholder="このスライドの読み上げスクリプトを入力..."></textarea>
+  <div id="script-editor-footer">
+    <span><span id="script-char-count">0</span> 文字</span>
+    <span data-i18n="ui.scriptHint"> | 切替え　|| スキップ</span>
+  </div>
+</div>
+
+<!-- Speaking Indicator -->
+<div class="speaking-indicator" id="speaking-indicator">
+  <div class="wave-bars"><span></span><span></span><span></span><span></span><span></span></div>
+  <span class="speaking-text" data-i18n="ui.speaking">読み上げ中…</span>
+  <button class="speaking-stop" id="stop-btn" data-i18n="ui.stop">停止</button>
+</div>
+
+<!-- Bottom Nav -->
+<div id="nav">
+  <button class="nbtn" id="prev-btn" aria-label="Previous slide">←</button>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="counter" id="counter">1 / 8</span>
+    <div id="dots"></div>
+  </div>
+  <button class="nbtn" id="next-btn" aria-label="Next slide">→</button>
+</div>
+
+<!-- Copyright -->
+<div id="copyright"><a href="https://github.com/FukudaRikako" target="_blank" rel="noopener noreferrer">© 2026 Rikako Fukuda</a></div>
+
+<script>
+/* ================================================================
+   TTS Presentation Engine
+   ================================================================ */
+(function(){
+'use strict';
+
+/* ── Constants ── */
+const TOTAL = 8;
+let cur = 0, busy = false;
+
+/* ── Emotion Presets ── */
+const EMOTIONS = {
+  calm:     { rate:0.9,  pitch:0.9,  volume:0.85, label:'落ち着き' },
+  passion:  { rate:1.15, pitch:1.2,  volume:1.0,  label:'情熱' },
+  gentle:   { rate:0.85, pitch:1.1,  volume:0.7,  label:'やさしさ' },
+  serious:  { rate:0.95, pitch:0.8,  volume:0.95, label:'真剣' },
+  cheerful: { rate:1.1,  pitch:1.15, volume:0.95, label:'明るさ' },
+  dramatic: { rate:0.8,  pitch:0.7,  volume:1.0,  label:'ドラマ' }
+};
+
+/* ── AI Talk Script Engine ── */
+/* Pre-crafted presenter-quality scripts per language */
+const SCRIPTS = {
+  ja: [
+    // S1: Title — 掴みと期待感
+    'みなさん、こんにちは。突然ですが、プレゼンテーションで「声」に困ったことはありませんか？…今日ご紹介するこのアプリは、その悩みを根本から解決します。|プレゼンを声で届けるのです！|Text-to-Speech の力で、スライドが自ら語り始める。声を選び、感情を込め、時間にぴったり合わせる。しかもすべて、ブラウザだけで完結します。|では早速、見ていきましょう。',
+    // S2: Problem — 共感と課題の深掘り
+    'TTS、テキストトゥースピーチを使うことで、プレゼンテーションで誰もが抱える|「あるある」な悩みを解決してくれます。|まず、人前で話すことへの緊張。実は調査によると、プレゼン経験者の7割以上が不安を感じているんです。|次に、時間配分の問題。5分と言われたのに3分で終わってしまう…とか、逆に大幅にオーバーする。|さらに、グローバルな場面では英語の発音への不安。|そして、アクセシビリティの観点では、音声が必要な場面でテキストだけでは不十分です。|…でも大丈夫。テクノロジーが、これらの課題をすべて解決してくれます。',
+    // S3: Technology — 技術紹介
+    'ここで少し、技術的な話をさせてください。|技術のしくみについてです。|ブラウザ内蔵の Web Speech API で動作し、さらに高品質な音声が必要なら Azure へ。|このアプリの読み上げ機能は、すべて「Web Speech API」というブラウザ内蔵の技術で動いています。特別なインストールも、APIキーも、サーバーも不要。ブラウザを開くだけで使えるのがポイントです。|ただし、より高品質なニューラル音声や、細やかな感情表現が必要な場合は、マイクロソフトの「Azure Text to Speech」という選択肢があります。400以上のニューラル音声、140以上の言語をサポートし、プロフェッショナルなプレゼンテーションにも対応できます。用途に応じて、使い分けてみてください。',
+    // S4: Features Overview — ワクワク感
+    'ここからが本題です。|このアプリには、3つの魔法があります。|ブラウザの Web Speech API だけで、ここまでできる。|ひとつ目は「声を選ぶ」。日本語、英語、その他多くの言語から、好みの声を自由に選べます。|ふたつ目は「感情を込める」。落ち着き、情熱、やさしさなど、6種類のプリセットで声に表情をつけます。|そしてみっつ目は「時間に合わせる」。目標時間を設定するだけで、最適な読み上げ速度を自動計算。それでは、ひとつずつ体験していきましょう。',
+    // S5: Voice Selection — デモ誘導
+    '最初の魔法、「声を選ぶ」です。|声を選ぶ。|右上の歯車ボタンをクリックすると音声設定が開きます。ぜひ色々な声を試してみてください。|ブラウザには、日本語だけでなく英語やフランス語、中国語など、驚くほど多くの音声エンジンが搭載されています。声を選んでクリックすれば、すぐにプレビューが聞けます。あなたのプレゼンにぴったりの声が、きっと見つかるはずです。',
+    // S6: Emotion — 感情の力を伝える
+    '次の魔法は、「感情を込める」です。|感情を込める。|ピッチと音量、スピードの組み合わせで、声に表情をつけます。|落ち着いた語りは信頼感を生みます。|情熱的な声は聴衆を鼓舞します。|やさしいトーンは安心感を与えます。|真剣な声は重要性を伝えます。|明るい声は場を和ませます。|プリセットをクリックして、実際に声の違いを体験してみてください。',
+    // S7: Time Control — 数字で説得
+    '最後の魔法、「時間に合わせる」です。|時間に合わせる。|「5分のプレゼンにしたい」と設定すれば、全スライドの文字数から最適な読み上げ速度を自動計算。練習いらずで時間ピッタリ。|全スライドの総文字数から自動で速度を調整します。もうリハーサルで時間を測る必要はありません。',
+    // S8: Ending — 余韻とCTA
+    'Let your slides speak.|いかがでしたか？GitHub Copilot がプレゼンテーションを生成し、ブラウザがそれを声に変える。|あなたがすべきことは、伝えたいメッセージを考えること、ただそれだけです。あとは、声に託しましょう。気に入っていただけたら、ぜひ GitHub でスターを付けてください。ご清聴ありがとうございました。'
+  ],
+  en: [
+    // S1: Title — Hook and promise
+    'Hello everyone. Let me ask you something.|Have you ever struggled with your voice during a presentation?|Today, I\'m introducing an app that fundamentally solves that problem. With the power of Text-to-Speech, your slides literally start speaking for themselves. Choose a voice, add emotion, match the timing. All entirely within your browser. Let\'s dive in.',
+    // S2: Problem — Empathy and depth
+    'Now, there are some universal struggles with presentations that almost everyone faces.|First, the fear of public speaking. Studies show over 70 percent of presenters feel anxious about it.|Then there\'s time management. Finishing a 5-minute talk in 3 minutes, or going way over.|In global settings, pronunciation anxiety in a foreign language is real.|And from an accessibility standpoint, text-only slides simply aren\'t enough when audio is needed. Feel free to click any card for more details. But don\'t worry. Technology can solve every one of these challenges.',
+    // S3: Technology — Under the Hood
+    'Let me take a moment to explain the technology behind this.|Under the Hood.|Powered by the browser\'s built-in Web Speech API. Need premium voices? Azure Text to Speech has you covered.|Everything you have heard so far is powered entirely by the Web Speech API, a feature built right into your browser. No installation, no API keys, no server required. Just open a browser and it works.|However, if you need higher-quality neural voices, nuanced emotional expression, or fine-grained control with SSML, Microsoft Azure Text to Speech is an excellent option. It supports over 400 neural voices across 140 plus languages. Choose whichever fits your needs.',
+    // S4: Features Overview — Building excitement
+    'Here\'s where it gets exciting.|This app offers three magic features.|All possible with just the Web Speech API in your browser.|Number one: Choose your voice. Pick from Japanese, English, and many other languages.|Number two: Add emotion. Six presets give your voice real expression.|And number three: Match the time. Just set your target duration, and the optimal reading speed is calculated automatically. Let me walk you through each one.',
+    // S5: Voice Selection — Demo guidance
+    'The first magic: choosing your voice.|Choose Voice.|Click the gear icon in the top right to open voice settings and try different voices.|Your browser comes packed with speech engines for dozens of languages. Japanese, English, French, Chinese, and more. Click to preview them instantly. I\'m sure you\'ll find the perfect voice for your presentation style.',
+    // S6: Emotion — The power of tone
+    'The second magic: adding emotion.|Add Emotion.|Pitch, volume, and speed combine to give your voice expression.|A calm tone builds trust.|A passionate voice inspires action.|A gentle tone creates comfort.|A serious voice conveys importance.|A cheerful voice lightens the mood.|And dramatic delivery captivates the audience. Click any preset in the panel to hear the difference. Try it yourself.',
+    // S7: Time Control — Convince with data
+    'The third magic: matching your presentation time.|Match Time.|Set 5-minute presentation and the optimal reading speed is auto-calculated from total character count. No rehearsal needed.|The system automatically adjusts speed across all slides. No more rehearsals with a stopwatch.',
+    // S8: Ending — Resonance and CTA
+    'Let your slides speak.|So, what do you think? GitHub Copilot generates the presentation, and your browser gives it a voice.|All you need to do is craft the message you want to share. Leave the rest to the voice. If you enjoyed this, please give us a star on GitHub. Thank you for listening.'
+  ],
+  it: [
+    // S1: Title
+    "Ciao a tutti. Vi è mai capitato di avere problemi con la voce durante una presentazione?|Oggi vi presento un'app che risolve questo problema alla radice.|Con la potenza del Text-to-Speech, le vostre diapositive iniziano letteralmente a parlare da sole. Scegliete una voce, aggiungete emozione, rispettate i tempi. Tutto direttamente nel browser. Cominciamo.",
+    // S2: Problem
+    "Ci sono alcune difficoltà universali nelle presentazioni che quasi tutti affrontano.|Prima di tutto, la paura di parlare in pubblico. Gli studi mostrano che oltre il 70 percento dei presentatori prova ansia.|Poi c'è la gestione del tempo. Finire una presentazione di 5 minuti in 3, o sforare di molto.|In contesti internazionali, l'ansia per la pronuncia in lingua straniera è reale.|E dal punto di vista dell'accessibilità, le diapositive con solo testo non bastano quando serve l'audio.|Ma non preoccupatevi. La tecnologia può risolvere ognuna di queste sfide.",
+    // S3: Technology
+    "Lasciate che vi spieghi la tecnologia dietro tutto questo.|Come funziona.|Alimentato dalla Web Speech API integrata nel browser. Servono voci premium? Azure Text to Speech fa al caso tuo.|Tutto ciò che avete sentito finora è alimentato interamente dalla Web Speech API, una funzionalità integrata nel vostro browser. Nessuna installazione, nessuna chiave API, nessun server necessario. Basta aprire il browser e funziona.|Tuttavia, se avete bisogno di voci neurali di qualità superiore, espressione emotiva sfumata o controllo fine con SSML, Microsoft Azure Text to Speech è un'ottima opzione. Supporta oltre 400 voci neurali in più di 140 lingue. Scegliete quella più adatta alle vostre esigenze.",
+    // S4: Features Overview
+    "Ecco dove diventa entusiasmante.|Questa app offre tre funzioni magiche.|Tutto possibile con la sola Web Speech API del browser.|Numero uno: scegliere la voce. Scegliete tra giapponese, inglese e molte altre lingue.|Numero due: aggiungere emozione. Sei preset danno vera espressione alla voce.|E numero tre: rispettare i tempi. Impostate la durata desiderata e la velocità ottimale viene calcolata automaticamente. Vi guido attraverso ciascuna.",
+    // S5: Voice Selection
+    "La prima magia: scegliere la voce.|Scegli la voce.|Cliccate sull'icona dell'ingranaggio in alto a destra per aprire le impostazioni vocali e provare diverse voci.|Il vostro browser è dotato di motori vocali per decine di lingue. Giapponese, inglese, francese, cinese e molte altre. Cliccate per ascoltare l'anteprima. Sono sicuro che troverete la voce perfetta per il vostro stile di presentazione.",
+    // S6: Emotion
+    "La seconda magia: aggiungere emozione.|Aggiungi emozione.|Tono, volume e velocità si combinano per dare espressione alla voce.|Un tono calmo costruisce fiducia.|Una voce appassionata ispira all'azione.|Un tono dolce crea comfort.|Una voce seria trasmette importanza.|Una voce allegra alleggerisce l'atmosfera.|E una consegna drammatica cattura il pubblico. Cliccate su qualsiasi preset nel pannello per sentire la differenza. Provatelo voi stessi.",
+    // S7: Time Control
+    "La terza magia: rispettare i tempi della presentazione.|Rispetta i tempi.|Impostate una presentazione di 5 minuti e la velocità di lettura ottimale viene calcolata automaticamente dal conteggio totale dei caratteri. Nessuna prova necessaria.|Il sistema regola automaticamente la velocità su tutte le diapositive. Niente più prove con il cronometro.",
+    // S8: Ending
+    "Let your slides speak.|Allora, che ne pensate? GitHub Copilot genera la presentazione e il vostro browser le dà voce.|Tutto ciò che dovete fare è creare il messaggio che volete condividere. Il resto lasciatelo alla voce. Se vi è piaciuto, dateci una stella su GitHub. Grazie per l'ascolto."
+  ]
+};
+
+let currentLang = 'ja';
+let currentEmotion = 'calm';
+let selectedVoice = null;
+let isSpeaking = false;
+let synth = window.speechSynthesis;
+let voices = [];
+
+/* ── i18n ── */
+const I18N = {
+  ja: {
+    'ui.logo':'TTS PRESENTATION',
+    'ui.hint':'← → キーまたはスワイプでスライドを移動　|　▶ で読み上げ開始',
+    'ui.play':'読み上げ',
+    'ui.playing':'停止',
+    'ui.settings':'🔊 音声設定',
+    'ui.voiceLabel':'音声を選ぶ',
+    'ui.voiceSearch':'声を検索...',
+    'ui.emotionLabel':'感情表現',
+    'ui.manualLabel':'手動調整',
+    'ui.rate':'スピード',
+    'ui.pitch':'ピッチ',
+    'ui.volume':'音量',
+    'ui.timeLabel':'プレゼン時間に合わせる',
+    'ui.min':'分',
+    'ui.calcBtn':'自動計算',
+    'ui.autoLabel':'自動再生',
+    'ui.autoDesc':'読み上げ終了後、自動で次のスライドへ',
+    'ui.speaking':'読み上げ中…',
+    'ui.stop':'停止',
+    'ui.scriptLabel':'トークスクリプト',
+    'ui.scriptHint':' | 切替え　|| スキップ',
+    's1.pill':'TTS PRESENTATION',
+    's1.h1':'プレゼンを<span class="it">声</span>で届ける。',
+    's1.sub':'Text-to-Speech でスライドを自動読み上げ。<br>声を選び、感情を込め、時間に合わせる — すべてブラウザだけで。',
+    's2.pill':'WHY TTS?',
+    's2.h2':'プレゼンの悩み、ありませんか？',
+    's2.c1.t':'人前で話すのが苦手','s2.c1.d':'緊張して言葉が出ない、早口になってしまう',
+    's2.c2.t':'時間配分が難しい','s2.c2.d':'5分と言われたのに3分で終わった…',
+    's2.c3.t':'多言語での発表','s2.c3.d':'英語プレゼンの発音に自信がない',
+    's2.c4.t':'アクセシビリティ','s2.c4.d':'音声が必要な場面でテキストだけでは不十分',
+    's4.pill':'FEATURES',
+    's4.h2':'3つの魔法',
+    's4.sub':'ブラウザの Web Speech API だけで、ここまでできる。',
+    's4.f1.t':'声を選ぶ','s4.f1.d':'日本語・英語・多言語の音声から好みの声を選択',
+    's4.f2.t':'感情を込める','s4.f2.d':'落ち着き・情熱・やさしさなど6種類のプリセット',
+    's4.f3.t':'時間に合わせる','s4.f3.d':'目標時間を設定すれば最適な読み上げ速度を自動計算',
+    's5.pill':'FEATURE 01',
+    's5.h2':'🎙️ 声を選ぶ',
+    's5.sub':'右上の⚙ボタンから音声設定を開いて、好みの声を試してみてください。',
+    's5.demo':'この文章が、選んだ声で読み上げられます。日本語でも英語でも、ブラウザが対応するすべての言語の音声が使えます。お気に入りの声を見つけてみてください。',
+    's6.pill':'FEATURE 02',
+    's6.h2':'🎭 感情を込める',
+    's6.sub':'ピッチと音量、スピードの組み合わせで、声に表情をつけます。',
+    'emo.calm':'落ち着き','emo.passion':'情熱','emo.gentle':'やさしさ',
+    'emo.serious':'真剣','emo.cheerful':'明るさ','emo.dramatic':'ドラマ',
+    's7.pill':'FEATURE 03',
+    's7.h2':'⏰ 時間に合わせる',
+    's7.sub':'「5分のプレゼンにしたい」と設定すれば、全スライドの文字数から最適な読み上げ速度を自動計算。練習いらずで時間ピッタリ。',
+    's7.target':'目標時間:','s7.min':'分',
+    's7.calc':'全スライドの総文字数から自動で速度を調整します',
+    's3.pill':'TECHNOLOGY',
+    's3.h2':'🔧 技術のしくみ',
+    's3.sub':'ブラウザ内蔵の Web Speech API で動作。<br>さらに高品質な音声が必要なら Azure へ。',
+    's3.c1.t':'Web Speech API','s3.c1.d':'ブラウザに内蔵された無料の音声エンジン。<br>インストール不要、APIキー不要。<br>このアプリはこれだけで動いています。',
+    's3.c2.t':'Azure Text to Speech','s3.c2.d':'マイクロソフトのクラウド音声サービス。<br>400以上のニューラル音声、感情表現、SSML対応。<br>プロ品質の音声が必要な場合に。',
+    's8.big':'Let your slides speak.',
+    's8.sub':'GitHub Copilot が生成し、ブラウザが読み上げる。<br>あなたはメッセージを考えるだけ。あとは、声に託そう。',
+    's8.link':'GitHub でスターを付ける'
+  },
+  en: {
+    'ui.logo':'TTS PRESENTATION',
+    'ui.hint':'Use ← → keys or swipe to navigate | ▶ to start reading',
+    'ui.play':'Speak',
+    'ui.playing':'Stop',
+    'ui.settings':'🔊 Voice Settings',
+    'ui.voiceLabel':'Choose Voice',
+    'ui.voiceSearch':'Search voices...',
+    'ui.emotionLabel':'Emotion',
+    'ui.manualLabel':'Manual Adjust',
+    'ui.rate':'Speed',
+    'ui.pitch':'Pitch',
+    'ui.volume':'Volume',
+    'ui.timeLabel':'Match Presentation Time',
+    'ui.min':'min',
+    'ui.calcBtn':'Calculate',
+    'ui.autoLabel':'Auto-play',
+    'ui.autoDesc':'Auto-advance to next slide after reading',
+    'ui.speaking':'Speaking…',
+    'ui.stop':'Stop',
+    'ui.scriptLabel':'Talk Script',
+    'ui.scriptHint':'| switch　|| skip',
+    's1.pill':'TTS PRESENTATION',
+    's1.h1':'Deliver with <span class="it">Voice</span>.',
+    's1.sub':'Auto-read slides with Text-to-Speech.<br>Choose voice, add emotion, match time — all in your browser.',
+    's2.pill':'WHY TTS?',
+    's2.h2':'Presentation struggles?',
+    's2.c1.t':'Stage fright','s2.c1.d':'Too nervous to speak, talking too fast',
+    's2.c2.t':'Time management','s2.c2.d':'Asked for 5 minutes, done in 3…',
+    's2.c3.t':'Multilingual talks','s2.c3.d':'Not confident in pronunciation',
+    's2.c4.t':'Accessibility','s2.c4.d':'Text alone isn\'t enough when audio is needed',
+    's4.pill':'FEATURES',
+    's4.h2':'Three Magic Features',
+    's4.sub':'All possible with just the Web Speech API in your browser.',
+    's4.f1.t':'Choose Voice','s4.f1.d':'Pick from Japanese, English, and many more languages',
+    's4.f2.t':'Add Emotion','s4.f2.d':'6 presets: calm, passion, gentle, serious, cheerful, dramatic',
+    's4.f3.t':'Match Time','s4.f3.d':'Set target time and speed auto-adjusts to fit',
+    's5.pill':'FEATURE 01',
+    's5.h2':'🎙️ Choose Voice',
+    's5.sub':'Open settings with the ⚙ button to browse and try different voices.',
+    's5.demo':'This text will be read aloud in the voice you choose. You can use voices from any language your browser supports. Find your favorite!',
+    's6.pill':'FEATURE 02',
+    's6.h2':'🎭 Add Emotion',
+    's6.sub':'Pitch, volume, and speed combine to give your voice expression.',
+    'emo.calm':'Calm','emo.passion':'Passion','emo.gentle':'Gentle',
+    'emo.serious':'Serious','emo.cheerful':'Cheerful','emo.dramatic':'Dramatic',
+    's7.pill':'FEATURE 03',
+    's7.h2':'⏰ Match Time',
+    's7.sub':'Set "5-minute presentation" and the optimal reading speed is auto-calculated from total character count. No rehearsal needed.',
+    's7.target':'Target:','s7.min':'min',
+    's7.calc':'Speed auto-adjusts based on total text across all slides',
+    's3.pill':'TECHNOLOGY',
+    's3.h2':'🔧 Under the Hood',
+    's3.sub':'Powered by the browser\'s built-in Web Speech API. Need premium voices? Azure Text to Speech has you covered.',
+    's3.c1.t':'Web Speech API','s3.c1.d':'Free speech engine built into your browser. No install, no API key needed. This entire app runs on it.',
+    's3.c2.t':'Azure Text to Speech','s3.c2.d':'Microsoft\'s cloud speech service. 400+ neural voices, emotional expression, SSML support. For professional-grade audio.',
+    's8.big':'Let your slides speak.',
+    's8.sub':'Generated by GitHub Copilot, read by your browser.<br>You craft the message. Leave the rest to the voice.',
+    's8.link':'Star on GitHub'
+  },
+  it: {
+    'ui.logo':'TTS PRESENTATION',
+    'ui.hint':'Usa ← → o swipe per navigare | ▶ per avviare la lettura',
+    'ui.play':'Leggi',
+    'ui.playing':'Ferma',
+    'ui.settings':'🔊 Impostazioni voce',
+    'ui.voiceLabel':'Scegli la voce',
+    'ui.voiceSearch':'Cerca voci...',
+    'ui.emotionLabel':'Emozione',
+    'ui.manualLabel':'Regolazione manuale',
+    'ui.rate':'Velocità',
+    'ui.pitch':'Tono',
+    'ui.volume':'Volume',
+    'ui.timeLabel':'Adatta al tempo della presentazione',
+    'ui.min':'min',
+    'ui.calcBtn':'Calcola',
+    'ui.autoLabel':'Riproduzione automatica',
+    'ui.autoDesc':'Avanza automaticamente alla diapositiva successiva dopo la lettura',
+    'ui.speaking':'Lettura in corso…',
+    'ui.stop':'Ferma',
+    'ui.scriptLabel':'Script di presentazione',
+    'ui.scriptHint':'| cambio　|| salta',
+    's1.pill':'TTS PRESENTATION',
+    's1.h1':'Presenta con la <span class="it">voce</span>.',
+    's1.sub':'Lettura automatica delle diapositive con Text-to-Speech.<br>Scegli la voce, aggiungi emozione, rispetta i tempi — tutto nel browser.',
+    's2.pill':'WHY TTS?',
+    's2.h2':'Problemi con le presentazioni?',
+    's2.c1.t':'Paura del palco','s2.c1.d':'Troppo nervosi per parlare, si parla troppo veloce',
+    's2.c2.t':'Gestione del tempo','s2.c2.d':'5 minuti richiesti, finiti in 3…',
+    's2.c3.t':'Presentazioni multilingue','s2.c3.d':'Poca sicurezza nella pronuncia',
+    's2.c4.t':'Accessibilità','s2.c4.d':"Solo il testo non basta quando serve l'audio",
+    's4.pill':'FEATURES',
+    's4.h2':'Tre funzioni magiche',
+    's4.sub':'Tutto possibile con la Web Speech API del browser.',
+    's4.f1.t':'Scegli la voce','s4.f1.d':'Scegli tra giapponese, inglese e molte altre lingue',
+    's4.f2.t':'Aggiungi emozione','s4.f2.d':'6 preset: calma, passione, dolcezza, serietà, allegria, drammaticità',
+    's4.f3.t':'Rispetta i tempi','s4.f3.d':'Imposta il tempo target e la velocità si adatta automaticamente',
+    's5.pill':'FEATURE 01',
+    's5.h2':'🎙️ Scegli la voce',
+    's5.sub':'Apri le impostazioni con il pulsante ⚙ per provare diverse voci.',
+    's5.demo':'Questo testo verrà letto ad alta voce con la voce che scegli. Puoi usare voci di qualsiasi lingua supportata dal tuo browser. Trova la tua preferita!',
+    's6.pill':'FEATURE 02',
+    's6.h2':'🎭 Aggiungi emozione',
+    's6.sub':'Tono, volume e velocità si combinano per dare espressione alla voce.',
+    'emo.calm':'Calma','emo.passion':'Passione','emo.gentle':'Dolcezza',
+    'emo.serious':'Serietà','emo.cheerful':'Allegria','emo.dramatic':'Drammaticità',
+    's7.pill':'FEATURE 03',
+    's7.h2':'⏰ Rispetta i tempi',
+    's7.sub':'Imposta "presentazione di 5 minuti" e la velocità ottimale viene calcolata automaticamente dal conteggio totale dei caratteri. Nessuna prova necessaria.',
+    's7.target':'Obiettivo:','s7.min':'min',
+    's7.calc':'La velocità si adatta automaticamente in base al testo totale di tutte le diapositive',
+    's3.pill':'TECHNOLOGY',
+    's3.h2':'🔧 Come funziona',
+    's3.sub':'Alimentato dalla Web Speech API integrata nel browser.<br>Servono voci premium? Azure Text to Speech fa al caso tuo.',
+    's3.c1.t':'Web Speech API','s3.c1.d':'Motore vocale gratuito integrato nel browser.<br>Nessuna installazione, nessuna chiave API.<br>Questa app funziona interamente con esso.',
+    's3.c2.t':'Azure Text to Speech','s3.c2.d':'Il servizio vocale cloud di Microsoft.<br>400+ voci neurali, espressione emotiva, supporto SSML.<br>Per audio di qualità professionale.',
+    's8.big':'Let your slides speak.',
+    's8.sub':'Generato da GitHub Copilot, letto dal tuo browser.<br>Tu crei il messaggio. Il resto lo fa la voce.',
+    's8.link':'Metti una stella su GitHub'
+  }
+};
+
+/* ── Lang toggle (simple, top-right below TTS panel) ── */
+function autoSelectVoiceForLang(lang) {
+  const code = {ja:'ja',en:'en',it:'it'}[lang] || 'en';
+  const v = voices.find(v => v.lang.startsWith(code)) || null;
+  if (v) { selectedVoice = v; renderVoiceList(); }
+}
+
+function applyLang(lang) {
+  currentLang = lang;
+  autoSelectVoiceForLang(lang);
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (I18N[lang] && I18N[lang][key]) el.innerHTML = I18N[lang][key];
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (I18N[lang] && I18N[lang][key]) el.placeholder = I18N[lang][key];
+  });
+  /* Adjust default speed per language */
+  const defaultRate = lang === 'ja' ? 2.0 : 1.3;
+  document.getElementById('rate-slider').value = defaultRate;
+  document.getElementById('rate-val').textContent = defaultRate.toFixed(1);
+}
+
+/* ── Slide Navigation ── */
+const slides = document.querySelectorAll('.slide');
+const dotsEl = document.getElementById('dots');
+const counterEl = document.getElementById('counter');
+const pbar = document.getElementById('pbar');
+
+// Create dots
+for (let i = 0; i < TOTAL; i++) {
+  const d = document.createElement('span');
+  d.className = 'dot' + (i === 0 ? ' on' : '');
+  d.addEventListener('click', () => goTo(i));
+  dotsEl.appendChild(d);
+}
+
+function updateChrome() {
+  document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('on', i === cur));
+  counterEl.textContent = (cur + 1) + ' / ' + TOTAL;
+  pbar.style.width = ((cur + 1) / TOTAL * 100) + '%';
+}
+
+function goTo(n) {
+  if (busy || n === cur || n < 0 || n >= TOTAL) return;
+  busy = true;
+  stopSpeaking();
+  const dir = n > cur ? 1 : -1;
+  slides[cur].classList.remove('active');
+  slides[cur].classList.add(dir > 0 ? 'exL' : 'exR');
+  slides[n].classList.add(dir > 0 ? 'enR' : 'enL');
+  cur = n;
+  updateChrome();
+  setTimeout(() => {
+    slides.forEach(s => { s.classList.remove('enR','exL','enL','exR'); s.classList.remove('active'); });
+    slides[cur].classList.add('active');
+    busy = false;
+    setCanvasMode(cur);
+    updateScriptEditor();
+    if (document.getElementById('autoplay-toggle').checked) {
+      const text = getSlideText(cur);
+      if (text) speak(text, () => {
+        if (document.getElementById('autoplay-toggle').checked && cur < TOTAL - 1) {
+          setTimeout(() => goTo(cur + 1), 400);
+        }
+      });
+    }
+  }, 520);
+}
+
+document.getElementById('prev-btn').addEventListener('click', () => goTo(cur - 1));
+document.getElementById('next-btn').addEventListener('click', () => goTo(cur + 1));
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(cur + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(cur - 1); }
+});
+
+// Touch swipe
+let tx = 0;
+document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tx;
+  if (Math.abs(dx) > 50) goTo(cur + (dx < 0 ? 1 : -1));
+}, { passive: true });
+
+// Hide hint
+setTimeout(() => document.getElementById('hint').classList.add('gone'), 5000);
+
+/* ── TTS Engine ── */
+function loadVoices() {
+  voices = synth.getVoices();
+  renderVoiceList();
+}
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function renderVoiceList() {
+  const list = document.getElementById('voice-list');
+  const filter = (document.getElementById('voice-search').value || '').toLowerCase();
+  list.innerHTML = '';
+  const filtered = voices.filter(v => {
+    if (!filter) return true;
+    return v.name.toLowerCase().includes(filter) || v.lang.toLowerCase().includes(filter);
+  });
+  filtered.forEach((v, i) => {
+    const div = document.createElement('div');
+    div.className = 'voice-item' + (selectedVoice && selectedVoice.name === v.name ? ' selected' : '');
+    div.innerHTML = '<span>' + sanitize(v.name) + '</span><span class="voice-lang">' + sanitize(v.lang) + '</span>';
+    div.addEventListener('click', () => {
+      selectedVoice = v;
+      renderVoiceList();
+      // Quick preview in voice's own language
+      const sampleTexts = {
+        ja:'こんにちは、この声で読み上げます',
+        en:'Hello, this is how I sound',
+        zh:'你好，这是我的声音',
+        ko:'안녕하세요, 이 목소리로 읽겠습니다',
+        fr:'Bonjour, voici ma voix',
+        de:'Hallo, so klinge ich',
+        es:'Hola, así es como sueno',
+        it:'Ciao, ecco come suono',
+        pt:'Olá, é assim que eu soo',
+        ru:'Привет, вот как я звучу',
+        ar:'مرحبا، هذا هو صوتي',
+        hi:'नमस्ते, यह मेरी आवाज़ है'
+      };
+      const langCode = v.lang.split('-')[0].toLowerCase();
+      const sampleText = sampleTexts[langCode] || 'Hello, this is how I sound';
+      const u = new SpeechSynthesisUtterance(sampleText);
+      u.voice = v;
+      u.lang = v.lang;
+      u.rate = 1;
+      u.pitch = 1;
+      u.volume = 0.7;
+      synth.cancel();
+      synth.speak(u);
+    });
+    list.appendChild(div);
+  });
+}
+
+function sanitize(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.getElementById('voice-search').addEventListener('input', renderVoiceList);
+
+/* ── Reading Highlight (line-by-line) ── */
+let highlightTimers = [];
+let highlightEls = [];
+let highlightIdx = -1;
+let speakPulseRAF = null;
+
+function randomPulse() {
+  const el = document.querySelector('.reading-highlight');
+  if (!el) { speakPulseRAF = null; return; }
+  const s = 1.02 + Math.random() * 0.06;
+  el.style.transform = 'scale(' + s.toFixed(3) + ')';
+  const delay = 120 + Math.random() * 200;
+  speakPulseRAF = setTimeout(randomPulse, delay);
+}
+
+function startPulse() {
+  stopPulse();
+  randomPulse();
+}
+function stopPulse() {
+  if (speakPulseRAF) { clearTimeout(speakPulseRAF); speakPulseRAF = null; }
+}
+
+function clearHighlights() {
+  highlightTimers.forEach(t => clearTimeout(t));
+  highlightTimers = [];
+  highlightEls = [];
+  highlightIdx = -1;
+  stopPulse();
+  document.querySelectorAll('.reading-highlight').forEach(el => { el.style.transform = ''; el.classList.remove('reading-highlight'); });
+}
+
+function advanceHighlight(skip) {
+  const steps = (skip || 0) + 1;
+  highlightIdx += steps;
+  document.querySelectorAll('.reading-highlight').forEach(e => { e.style.transform = ''; e.classList.remove('reading-highlight'); });
+  if (highlightIdx < highlightEls.length) {
+    highlightEls[highlightIdx].classList.add('reading-highlight');
+    startPulse();
+  }
+}
+
+/* Parse | and || markers from script text.
+   | = advance highlight, || = skip next element then advance.
+   Returns { cleanText, markers: [{pos, skip}] } */
+function parseMarkers(raw) {
+  const markers = [];
+  let clean = '';
+  let i = 0;
+  while (i < raw.length) {
+    if (raw[i] === '|' && raw[i + 1] === '|') {
+      markers.push({ pos: clean.length, skip: 1 });
+      i += 2;
+    } else if (raw[i] === '|') {
+      markers.push({ pos: clean.length, skip: 0 });
+      i++;
+    } else {
+      clean += raw[i];
+      i++;
+    }
+  }
+  return { cleanText: clean, markers: markers };
+}
+
+function setupHighlightEls(slideIdx) {
+  const slide = slides[slideIdx];
+  highlightEls = Array.from(slide.querySelectorAll('.pill, h1, h2, .sub, .feature-card, .big, .link-card, .demo-area p, .emotion-btn'));
+}
+
+function scheduleHighlightsFallback(slideIdx, rate) {
+  /* Fallback: time-based if no markers */
+  clearHighlights();
+  setupHighlightEls(slideIdx);
+  if (highlightEls.length === 0) return;
+  const scriptText = SCRIPTS[currentLang][slideIdx] || '';
+  const charsPerSec = currentLang === 'ja' ? 5.5 : 13;
+  const totalDuration = (scriptText.length / charsPerSec / rate) * 1000;
+  const interval = totalDuration / highlightEls.length;
+  highlightEls.forEach((el, i) => {
+    highlightTimers.push(setTimeout(() => {
+      document.querySelectorAll('.reading-highlight').forEach(e => { e.style.transform = ''; e.classList.remove('reading-highlight'); });
+      el.classList.add('reading-highlight');
+      startPulse();
+    }, interval * i));
+  });
+  highlightTimers.push(setTimeout(clearHighlights, totalDuration));
+}
+
+/* ── Speaking ── */
+function getSlideText(index) {
+  return SCRIPTS[currentLang][index] || '';
+}
+
+function getTotalChars() {
+  return SCRIPTS[currentLang].reduce((sum, s) => sum + s.length, 0);
+}
+
+function speak(text, onEnd) {
+  synth.cancel();
+  const parsed = parseMarkers(text);
+  const hasMarkers = parsed.markers.length > 0;
+  const utter = new SpeechSynthesisUtterance(parsed.cleanText);
+
+  if (selectedVoice) utter.voice = selectedVoice;
+
+  const emo = EMOTIONS[currentEmotion];
+  utter.rate = parseFloat(document.getElementById('rate-slider').value);
+  utter.pitch = parseFloat(document.getElementById('pitch-slider').value);
+  utter.volume = parseFloat(document.getElementById('volume-slider').value);
+
+  isSpeaking = true;
+  updateSpeakingUI();
+
+  /* Setup highlight elements */
+  clearHighlights();
+  setupHighlightEls(cur);
+
+  if (hasMarkers) {
+    /* Marker-driven: first element highlighted immediately */
+    highlightIdx = -1;
+    advanceHighlight();
+    let nextMarkerIdx = 0;
+    utter.onboundary = (e) => {
+      if (e.name !== 'word' || nextMarkerIdx >= parsed.markers.length) return;
+      if (e.charIndex >= parsed.markers[nextMarkerIdx].pos) {
+        const skip = parsed.markers[nextMarkerIdx].skip;
+        nextMarkerIdx++;
+        advanceHighlight(skip);
+      }
+    };
+  } else {
+    scheduleHighlightsFallback(cur, utter.rate);
+  }
+
+  utter.onend = () => {
+    isSpeaking = false;
+    clearHighlights();
+    updateSpeakingUI();
+    if (onEnd) onEnd();
+  };
+  utter.onerror = () => {
+    isSpeaking = false;
+    clearHighlights();
+    updateSpeakingUI();
+  };
+
+  // Workaround: Chrome stops speech after ~15s. Keep alive with resume trick.
+  let keepAlive;
+  utter.onstart = (function(origOnStart) {
+    return () => {
+      keepAlive = setInterval(() => {
+        if (synth.speaking && !synth.paused) {
+          synth.pause();
+          synth.resume();
+        }
+      }, 10000);
+    };
+  })();
+  const origEnd = utter.onend;
+  utter.onend = () => {
+    clearInterval(keepAlive);
+    origEnd();
+  };
+  const origErr = utter.onerror;
+  utter.onerror = () => {
+    clearInterval(keepAlive);
+    origErr();
+  };
+
+  synth.speak(utter);
+}
+
+function stopSpeaking() {
+  synth.cancel();
+  isSpeaking = false;
+  clearHighlights();
+  updateSpeakingUI();
+}
+
+function updateSpeakingUI() {
+  const btn = document.getElementById('tts-main-btn');
+  const label = document.getElementById('tts-btn-label');
+  const indicator = document.getElementById('speaking-indicator');
+  if (isSpeaking) {
+    btn.classList.add('speaking');
+    btn.querySelector('.icon').textContent = '■';
+    label.textContent = I18N[currentLang]['ui.playing'];
+    indicator.classList.add('visible');
+  } else {
+    btn.classList.remove('speaking');
+    btn.querySelector('.icon').textContent = '▶';
+    label.textContent = I18N[currentLang]['ui.play'];
+    indicator.classList.remove('visible');
+  }
+}
+
+/* ── Main TTS button ── */
+document.getElementById('tts-main-btn').addEventListener('click', () => {
+  if (isSpeaking) {
+    stopSpeaking();
+  } else {
+    const text = getSlideText(cur);
+    const autoplay = document.getElementById('autoplay-toggle').checked;
+    speak(text, () => {
+      if (autoplay && cur < TOTAL - 1) {
+        setTimeout(() => {
+          goTo(cur + 1);
+          setTimeout(() => {
+            const nextText = getSlideText(cur);
+            speak(nextText, arguments.callee);
+          }, 600);
+        }, 400);
+      }
+    });
+  }
+});
+
+document.getElementById('stop-btn').addEventListener('click', stopSpeaking);
+
+/* ── Auto-play with chain ── */
+function speakAllFromCurrent() {
+  const text = getSlideText(cur);
+  speak(text, () => {
+    if (cur < TOTAL - 1) {
+      setTimeout(() => {
+        goTo(cur + 1);
+        setTimeout(speakAllFromCurrent, 600);
+      }, 400);
+    }
+  });
+}
+
+/* ── TTS Drawer ── */
+const drawer = document.getElementById('tts-drawer');
+const overlay = document.getElementById('tts-drawer-overlay');
+
+document.getElementById('tts-settings-btn').addEventListener('click', () => {
+  drawer.classList.add('open');
+  overlay.classList.add('open');
+});
+function closeDrawer() {
+  drawer.classList.remove('open');
+  overlay.classList.remove('open');
+}
+document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
+overlay.addEventListener('click', closeDrawer);
+
+/* ── Sliders ── */
+document.getElementById('rate-slider').addEventListener('input', e => {
+  document.getElementById('rate-val').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('pitch-slider').addEventListener('input', e => {
+  document.getElementById('pitch-val').textContent = parseFloat(e.target.value).toFixed(1);
+});
+document.getElementById('volume-slider').addEventListener('input', e => {
+  document.getElementById('volume-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+/* ── Emotion Presets ── */
+function applyEmotion(name) {
+  const emo = EMOTIONS[name];
+  if (!emo) return;
+  currentEmotion = name;
+  document.getElementById('rate-slider').value = emo.rate;
+  document.getElementById('rate-val').textContent = emo.rate.toFixed(1);
+  document.getElementById('pitch-slider').value = emo.pitch;
+  document.getElementById('pitch-val').textContent = emo.pitch.toFixed(1);
+  document.getElementById('volume-slider').value = emo.volume;
+  document.getElementById('volume-val').textContent = emo.volume.toFixed(2);
+
+  // Update buttons in drawer & slide 5
+  document.querySelectorAll('.emotion-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.emotion === name);
+  });
+}
+
+document.querySelectorAll('.emotion-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    applyEmotion(btn.dataset.emotion);
+    // Preview
+    const preview = currentLang === 'ja' ? 'この声で読み上げます' : currentLang === 'it' ? 'Ecco come suona' : 'This is how it sounds';
+    speak(preview, null);
+  });
+});
+
+/* ── Time-based speed calc ── */
+document.getElementById('calc-speed-btn').addEventListener('click', calcSpeed);
+document.getElementById('demo-time').addEventListener('change', function() {
+  document.getElementById('target-time').value = this.value;
+});
+
+function calcSpeed() {
+  const targetMin = parseFloat(document.getElementById('target-time').value) || 5;
+  const totalChars = getTotalChars();
+  // Japanese: ~350 chars/min at rate 1.0, English: ~150 words/min
+  const charsPerMinAtRate1 = currentLang === 'ja' ? 350 : 800;
+  const neededRate = totalChars / (targetMin * charsPerMinAtRate1);
+  const clampedRate = Math.max(0.3, Math.min(2.5, neededRate));
+
+  document.getElementById('rate-slider').value = clampedRate;
+  document.getElementById('rate-val').textContent = clampedRate.toFixed(1);
+
+  const result = document.getElementById('time-result');
+  if (currentLang === 'ja') {
+    result.textContent = '総文字数: ' + totalChars + '文字 → 速度 ' + clampedRate.toFixed(2) + 'x で約' + targetMin + '分';
+  } else if (currentLang === 'it') {
+    result.textContent = 'Totale: ' + totalChars + ' caratteri → Velocità ' + clampedRate.toFixed(2) + 'x per ~' + targetMin + ' min';
+  } else {
+    result.textContent = 'Total: ' + totalChars + ' chars → Speed ' + clampedRate.toFixed(2) + 'x for ~' + targetMin + ' min';
+  }
+
+  // Also update demo calc on slide 6
+  const demoCalc = document.getElementById('demo-calc');
+  if (demoCalc) demoCalc.textContent = result.textContent;
+}
+
+/* ── Language toggle via keyboard shortcut (L key) ── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'l' || e.key === 'L') {
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+    currentLang = currentLang === 'ja' ? 'en' : currentLang === 'en' ? 'it' : 'ja';
+    applyLang(currentLang);
+    updateLangToggleUI();
+  }
+});
+
+/* Logo click to go home */
+document.querySelector('.top-logo').addEventListener('click', () => {
+  goTo(0);
+});
+
+/* Language toggle button */
+function updateLangToggleUI() {
+  document.querySelectorAll('#lang-toggle span').forEach(s => {
+    s.classList.toggle('active', s.textContent.toLowerCase() === currentLang);
+  });
+}
+document.getElementById('lang-toggle').addEventListener('click', () => {
+  currentLang = currentLang === 'ja' ? 'en' : currentLang === 'en' ? 'it' : 'ja';
+  applyLang(currentLang);
+  updateLangToggleUI();
+});
+
+/* ── Background Canvas ── */
+const canvas = document.getElementById('bg-canvas');
+const ctx = canvas.getContext('2d');
+let cW, cH, particles = [], canvasMode = 'voice';
+
+function resizeCanvas() {
+  cW = canvas.width = window.innerWidth;
+  cH = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const MODES = ['voice','shake','connect','trio','wave','pulse','sweep','burst'];
+
+function setCanvasMode(slideIdx) {
+  canvasMode = MODES[slideIdx] || 'float';
+  initParticles();
+}
+
+function initParticles() {
+  particles = [];
+  const count = canvasMode === 'burst' ? 40 : canvasMode === 'voice' ? 50 : 25;
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random() * cW,
+      y: Math.random() * cH,
+      r: Math.random() * 3 + 1,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      alpha: Math.random() * 0.15 + 0.05
+    });
+  }
+}
+initParticles();
+
+let ripples = [];
+function addRipple() {
+  ripples.push({ x: Math.random() * cW, y: Math.random() * cH, r: 0, maxR: 80 + Math.random() * 60, alpha: 0.12 });
+}
+
+function animateCanvas() {
+  ctx.clearRect(0, 0, cW, cH);
+
+  if (canvasMode === 'voice') {
+    // S1: "Voice Possibility" — irregular ripples + organic waveforms + flickering particles
+    var t = Date.now() / 1000;
+    var cx2 = cW / 2, cy2 = cH / 2;
+    // Irregular ripples — each has its own random speed, offset, and origin jitter
+    for (var i = 0; i < 6; i++) {
+      var speed = 0.25 + (((i * 7 + 3) % 11) / 11) * 0.35;
+      var offset = ((i * 13 + 5) % 17) / 17;
+      var phase = ((t * speed + offset) % 1);
+      var jx = Math.sin(t * 0.3 + i * 2.7) * 15;
+      var jy = Math.cos(t * 0.25 + i * 1.9) * 12;
+      var rr = phase * Math.min(cW, cH) * (0.4 + ((i * 3) % 7) / 7 * 0.25);
+      var al = (0.10 + Math.sin(t * 1.3 + i * 4.1) * 0.04) * (1 - phase);
+      ctx.beginPath(); ctx.arc(cx2 + jx, cy2 + jy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(58,110,165,' + Math.max(0, al) + ')';
+      ctx.lineWidth = 1 + (1 - phase) * 2.5; ctx.stroke();
+    }
+    // Organic waveforms — amplitude and speed breathe irregularly
+    for (var w = 0; w < 3; w++) {
+      ctx.beginPath();
+      var baseAmp = 18 + w * 14;
+      var breath = Math.sin(t * (0.6 + w * 0.23) + w * 1.7) * 0.6 + 0.4;
+      var amp = baseAmp * breath + Math.sin(t * 1.7 + w * 3.3) * 6;
+      var freq = 0.005 + w * 0.002 + Math.sin(t * 0.4 + w) * 0.001;
+      var sp = t * (1.2 + w * 0.5 + Math.sin(t * 0.3 + w * 2) * 0.3);
+      var al2 = 0.07 + Math.sin(t * 0.9 + w * 2.5) * 0.03;
+      var yOff = cy2 + (w - 1) * 55 + Math.sin(t * 0.5 + w * 1.3) * 10;
+      for (var x = 0; x <= cW; x += 3) {
+        var y = yOff + Math.sin(x * freq + sp) * amp
+              + Math.sin(x * freq * 2.7 + sp * 1.4) * amp * 0.2
+              + Math.sin(x * 0.003 + t * 2.1 + w) * 4;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      var cols = ['58,110,165','201,95,42','90,138,110'];
+      ctx.strokeStyle = 'rgba(' + cols[w] + ',' + Math.max(0.01, al2) + ')';
+      ctx.lineWidth = 1.2 + Math.sin(t * 1.1 + w) * 0.5; ctx.stroke();
+    }
+    // Glowing center orb — irregular pulse
+    var orbPulse = Math.sin(t * 1.8) * 0.3 + Math.sin(t * 3.1) * 0.2 + 0.5;
+    var orbR = 16 + orbPulse * 15;
+    var g = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, orbR * 3);
+    g.addColorStop(0, 'rgba(58,110,165,' + (0.14 + orbPulse * 0.1) + ')');
+    g.addColorStop(0.5, 'rgba(201,95,42,' + (0.05 + orbPulse * 0.05) + ')');
+    g.addColorStop(1, 'rgba(58,110,165,0)');
+    ctx.beginPath(); ctx.arc(cx2, cy2, orbR * 3, 0, Math.PI * 2);
+    ctx.fillStyle = g; ctx.fill();
+    // Flickering voice particles — each has its own rhythm
+    particles.forEach(function(p, i) {
+      var pi2 = i * 0.618 + 1.3;
+      var drift = Math.sin(t * (0.5 + (i % 7) * 0.12) + pi2) * 0.4;
+      p.x += p.vx + drift;
+      p.y += p.vy + Math.cos(t * (0.4 + (i % 5) * 0.1) + pi2) * 0.25;
+      if (p.x < 0) p.x = cW; if (p.x > cW) p.x = 0;
+      if (p.y < 0) p.y = cH; if (p.y > cH) p.y = 0;
+      var dist = Math.hypot(p.x - cx2, p.y - cy2);
+      var glow = Math.max(0, 1 - dist / (Math.min(cW, cH) * 0.5));
+      // Random flicker: each particle blinks at its own frequency
+      var flicker = Math.sin(t * (2 + (i % 11) * 0.7) + i * 3.7) * 0.5 + 0.5;
+      var pr = p.r * (0.6 + flicker * 0.8) + glow * 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.5, pr), 0, Math.PI * 2);
+      var pa = (p.alpha + glow * 0.12) * (0.4 + flicker * 0.6);
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(201,95,42,' + pa + ')' : 'rgba(58,110,165,' + pa + ')';
+      ctx.fill();
+    });
+  } else if (canvasMode === 'float') {
+    // Fallback: Soft warm floating dots
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = cW; if (p.x > cW) p.x = 0;
+      if (p.y < 0) p.y = cH; if (p.y > cH) p.y = 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(201,95,42,' + p.alpha + ')'; ctx.fill();
+    });
+  } else if (canvasMode === 'shake') {
+    // S2: Anxious jittering particles (Problem)
+    particles.forEach(p => {
+      p.x += p.vx + (Math.random() - 0.5) * 2.5;
+      p.y += p.vy + (Math.random() - 0.5) * 2.5;
+      if (p.x < 0) p.x = cW; if (p.x > cW) p.x = 0;
+      if (p.y < 0) p.y = cH; if (p.y > cH) p.y = 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + Math.random(), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(201,95,42,' + (p.alpha * 1.5) + ')'; ctx.fill();
+    });
+  } else if (canvasMode === 'trio') {
+    // S4: Three glowing feature orbs
+    var t = Date.now() / 1000;
+    var orbs = [{x:cW*0.25,y:cH*0.4,c:'58,110,165'},{x:cW*0.5,y:cH*0.55,c:'90,138,110'},{x:cW*0.75,y:cH*0.4,c:'201,95,42'}];
+    orbs.forEach(function(o, i) {
+      var pulse = Math.sin(t * 1.5 + i * 2.1) * 0.5 + 0.5;
+      var r = 50 + pulse * 35;
+      var g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, r);
+      g.addColorStop(0, 'rgba(' + o.c + ',' + (0.12 + pulse * 0.08) + ')');
+      g.addColorStop(1, 'rgba(' + o.c + ',0)');
+      ctx.beginPath(); ctx.arc(o.x, o.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = g; ctx.fill();
+    });
+  } else if (canvasMode === 'wave') {
+    // S5: Sound wave sine lines (Voice)
+    var t = Date.now() / 1000;
+    for (var w = 0; w < 5; w++) {
+      ctx.beginPath();
+      var amp = 15 + w * 10, freq = 0.008 - w * 0.001;
+      var sp = t * (1.2 + w * 0.3), al = 0.09 - w * 0.015;
+      for (var x = 0; x <= cW; x += 3) {
+        var y = cH / 2 + Math.sin(x * freq + sp) * amp + Math.sin(x * freq * 2.5 + sp * 0.7) * amp * 0.3;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = 'rgba(58,110,165,' + Math.max(0, al) + ')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  } else if (canvasMode === 'pulse') {
+    // S6: Emotion color-shifting particles
+    var t = Date.now() / 2000;
+    var cols = [[58,110,165],[201,95,42],[90,138,110],[180,80,80],[160,130,60],[120,80,160]];
+    particles.forEach(function(p, i) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = cW; if (p.x > cW) p.x = 0;
+      if (p.y < 0) p.y = cH; if (p.y > cH) p.y = 0;
+      var ci = Math.floor((t + i * 0.3) % cols.length), c = cols[ci];
+      var pulse = Math.sin(t * 3 + i) * 0.5 + 0.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r + pulse * 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (p.alpha + pulse * 0.05) + ')'; ctx.fill();
+    });
+  } else if (canvasMode === 'sweep') {
+    // S7: Clock sweeping arc (Time)
+    var t = Date.now() / 3000, cx2 = cW / 2, cy2 = cH / 2;
+    var maxR = Math.min(cW, cH) * 0.35;
+    for (var i = 0; i < 12; i++) {
+      var a2 = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx2 + Math.cos(a2) * (maxR - 8), cy2 + Math.sin(a2) * (maxR - 8));
+      ctx.lineTo(cx2 + Math.cos(a2) * maxR, cy2 + Math.sin(a2) * maxR);
+      ctx.strokeStyle = 'rgba(58,110,165,0.1)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    var ang = (t % 1) * Math.PI * 2 - Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(cx2, cy2);
+    ctx.lineTo(cx2 + Math.cos(ang) * maxR * 0.85, cy2 + Math.sin(ang) * maxR * 0.85);
+    ctx.strokeStyle = 'rgba(58,110,165,0.15)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx2, cy2, maxR * 0.6, ang - 0.8, ang);
+    ctx.strokeStyle = 'rgba(58,110,165,0.08)'; ctx.lineWidth = 20; ctx.stroke();
+  } else if (canvasMode === 'connect') {
+    // S3: Technical Architecture — browser→API→cloud pipeline with data flow
+    var t = Date.now() / 1000;
+    var cx2 = cW / 2, cy2 = cH / 2;
+    var minD = Math.min(cW, cH);
+
+    // === Circuit board grid lines ===
+    ctx.strokeStyle = 'rgba(58,110,165,0.04)';
+    ctx.lineWidth = 0.5;
+    var gridSize = 60;
+    for (var gx = gridSize; gx < cW; gx += gridSize) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cH); ctx.stroke();
+    }
+    for (var gy = gridSize; gy < cH; gy += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cW, gy); ctx.stroke();
+    }
+    // Grid intersection dots
+    for (var gx2 = gridSize; gx2 < cW; gx2 += gridSize) {
+      for (var gy2 = gridSize; gy2 < cH; gy2 += gridSize) {
+        ctx.beginPath(); ctx.arc(gx2, gy2, 1, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(58,110,165,0.06)'; ctx.fill();
+      }
+    }
+
+    // === Three architecture layers: Browser | Web Speech API | Azure ===
+    var layerX = [cW * 0.2, cW * 0.5, cW * 0.8];
+    var layerLabels = ['{ }', 'API', '☁'];
+    var layerColors = ['58,110,165', '90,138,110', '201,95,42'];
+
+    layerX.forEach(function(lx, li) {
+      // Layer node glow
+      var pulse = Math.sin(t * 1.5 + li * 2.2) * 0.5 + 0.5;
+      var nr = 28 + pulse * 10;
+      var ng = ctx.createRadialGradient(lx, cy2, 0, lx, cy2, nr * 2);
+      ng.addColorStop(0, 'rgba(' + layerColors[li] + ',' + (0.12 + pulse * 0.06) + ')');
+      ng.addColorStop(1, 'rgba(' + layerColors[li] + ',0)');
+      ctx.beginPath(); ctx.arc(lx, cy2, nr * 2, 0, Math.PI * 2);
+      ctx.fillStyle = ng; ctx.fill();
+      // Inner circle
+      ctx.beginPath(); ctx.arc(lx, cy2, nr * 0.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(' + layerColors[li] + ',' + (0.15 + pulse * 0.1) + ')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+      // Layer icon
+      ctx.font = (li === 2 ? '16' : '11') + 'px monospace';
+      ctx.fillStyle = 'rgba(' + layerColors[li] + ',' + (0.2 + pulse * 0.1) + ')';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(layerLabels[li], lx, cy2);
+    });
+
+    // === Connection pipelines between layers ===
+    for (var ci = 0; ci < 2; ci++) {
+      var x1 = layerX[ci] + 30, x2 = layerX[ci + 1] - 30;
+      // Pipeline line
+      ctx.beginPath(); ctx.moveTo(x1, cy2); ctx.lineTo(x2, cy2);
+      ctx.strokeStyle = 'rgba(58,110,165,0.08)'; ctx.lineWidth = 2; ctx.stroke();
+      // Arrow head
+      ctx.beginPath();
+      ctx.moveTo(x2 - 6, cy2 - 4); ctx.lineTo(x2, cy2); ctx.lineTo(x2 - 6, cy2 + 4);
+      ctx.strokeStyle = 'rgba(58,110,165,0.12)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+
+    // === Data packets flowing between layers ===
+    for (var pi = 0; pi < 8; pi++) {
+      var pipeIdx = pi < 4 ? 0 : 1;
+      var x1p = layerX[pipeIdx] + 30, x2p = layerX[pipeIdx + 1] - 30;
+      var speed = 0.3 + ((pi * 7 + 3) % 11) / 11 * 0.5;
+      var offset = ((pi * 13 + 5) % 17) / 17;
+      var prog = ((t * speed + offset) % 1);
+      var px = x1p + (x2p - x1p) * prog;
+      var py = cy2 + Math.sin(t * 3 + pi * 2.3) * 8;
+      var pal = 0.15 * (1 - Math.abs(prog - 0.5) * 2);
+      ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = pipeIdx === 0 ? 'rgba(90,138,110,' + pal + ')' : 'rgba(201,95,42,' + pal + ')';
+      ctx.fill();
+      // Data packet trail
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - 12 * (prog > 0.5 ? 1 : -1) * 0, py);
+      var trailLen = 15;
+      ctx.moveTo(px - trailLen, py); ctx.lineTo(px, py);
+      ctx.strokeStyle = pipeIdx === 0 ? 'rgba(90,138,110,' + pal * 0.5 + ')' : 'rgba(201,95,42,' + pal * 0.5 + ')';
+      ctx.lineWidth = 1; ctx.stroke();
+    }
+
+    // === Floating binary / hex data ===
+    ctx.font = '10px monospace';
+    var dataSnippets = ['0x1A','GET','POST','UTF-8','JSON','TTS','SSML','ws://','200','</>'];
+    for (var di = 0; di < dataSnippets.length; di++) {
+      var dx = ((di * 137 + 51) % (cW - 80)) + 40;
+      var dy = ((di * 89 + 23) % (cH - 60)) + 30;
+      dy = dy + Math.sin(t * 0.5 + di * 1.7) * 15;
+      var da = 0.06 + Math.sin(t * 0.8 + di * 2.3) * 0.03;
+      ctx.fillStyle = 'rgba(58,110,165,' + Math.max(0, da) + ')';
+      ctx.textAlign = 'center'; ctx.fillText(dataSnippets[di], dx, dy);
+    }
+
+    // === Signal waves emanating from API node ===
+    for (var si = 0; si < 3; si++) {
+      var sphase = ((t * 0.5 + si / 3) % 1);
+      var sr = sphase * minD * 0.15;
+      var sal = 0.07 * (1 - sphase);
+      ctx.beginPath();
+      ctx.arc(layerX[1], cy2, sr, -Math.PI * 0.3, Math.PI * 0.3);
+      ctx.strokeStyle = 'rgba(90,138,110,' + Math.max(0, sal) + ')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(layerX[1], cy2, sr, Math.PI * 0.7, Math.PI * 1.3);
+      ctx.strokeStyle = 'rgba(90,138,110,' + Math.max(0, sal) + ')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  } else if (canvasMode === 'burst') {
+    // S8: Celebratory expanding rings
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = cW; if (p.x > cW) p.x = 0;
+      if (p.y < 0) p.y = cH; if (p.y > cH) p.y = 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(58,110,165,' + p.alpha + ')'; ctx.fill();
+    });
+    var cx2 = cW / 2, cy2 = cH / 2, t = Date.now() / 2000;
+    for (var i = 0; i < 3; i++) {
+      var r2 = ((t + i / 3) % 1) * Math.min(cW, cH) * 0.4;
+      var a2 = 0.08 * (1 - r2 / (Math.min(cW, cH) * 0.4));
+      ctx.beginPath(); ctx.arc(cx2, cy2, r2, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(58,110,165,' + Math.max(0, a2) + ')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+
+  requestAnimationFrame(animateCanvas);
+}
+animateCanvas();
+
+/* ── Script Editor ── */
+const scriptEditor = document.getElementById('script-editor');
+const scriptTextarea = document.getElementById('script-textarea');
+const scriptCharCount = document.getElementById('script-char-count');
+const seSlideNum = document.getElementById('se-slide-num');
+
+function openScriptEditor() {
+  scriptEditor.classList.add('open');
+  document.getElementById('stage').classList.add('script-open');
+  updateScriptEditor();
+}
+function closeScriptEditor() {
+  scriptEditor.classList.remove('open');
+  document.getElementById('stage').classList.remove('script-open');
+}
+function updateScriptEditor() {
+  if (!scriptEditor.classList.contains('open')) return;
+  scriptTextarea.value = SCRIPTS[currentLang][cur] || '';
+  scriptCharCount.textContent = scriptTextarea.value.replace(/\|/g, '').length;
+  seSlideNum.textContent = 'Slide ' + (cur + 1);
+}
+
+document.getElementById('script-editor-btn').addEventListener('click', () => {
+  if (scriptEditor.classList.contains('open')) { closeScriptEditor(); } else { openScriptEditor(); }
+});
+document.getElementById('script-editor-close').addEventListener('click', closeScriptEditor);
+
+scriptTextarea.addEventListener('input', () => {
+  SCRIPTS[currentLang][cur] = scriptTextarea.value;
+  scriptCharCount.textContent = scriptTextarea.value.replace(/\|/g, '').length;
+});
+
+/* ── Init ── */
+applyLang('ja');
+updateChrome();
+
+})();
+</script>
+</body>
+</html>
