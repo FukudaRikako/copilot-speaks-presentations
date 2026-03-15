@@ -63,4 +63,30 @@ npx swa deploy . --deployment-token "<YOUR_TOKEN>" --env production
 
 ---
 
+## ⚠️ 既知の問題と対処
+
+### iPhone (iOS Safari) で音声が異常に速くなる
+
+**症状**: iPhone / iPad の Safari で読み上げると、音声が超高速になり聞き取れない。
+
+**原因**: iOS Safari の Web Speech API は `rate`（読み上げ速度）の解釈がデスクトップブラウザと異なります。
+
+| ブラウザ | `rate: 2.0` の挙動 |
+|---|---|
+| Chrome / Edge（デスクトップ） | 通常の2倍速（実用範囲） |
+| **iOS Safari** | **異常に高速**（非線形スケーリング） |
+
+iOS では `rate: 1.0` を超えると急激に加速し、デスクトップで快適な `2.0` は iOS では爆速になります。
+
+**対処**: iOS デバイスを自動検出し、デフォルト速度を抑制しています。
+
+| 言語 | デスクトップ | iOS |
+|---|---|---|
+| 日本語 | 2.0 | 1.0 |
+| 英語・イタリア語 | 1.3 | 0.9 |
+
+iOS ではスライダーの上限も `2.5 → 1.5` に制限しています。
+
+---
+
 *Generated with GitHub Copilot — Let your slides speak.*

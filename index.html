@@ -896,9 +896,17 @@ function applyLang(lang) {
     const key = el.getAttribute('data-i18n-placeholder');
     if (I18N[lang] && I18N[lang][key]) el.placeholder = I18N[lang][key];
   });
-  /* Adjust default speed per language */
-  const defaultRate = lang === 'ja' ? 2.0 : 1.3;
-  document.getElementById('rate-slider').value = defaultRate;
+  /* Adjust default speed per language
+     iOS Safari interprets rate non-linearly — values above ~1.0 become
+     extremely fast. We cap the default for iOS devices. */
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const defaultRate = isIOS
+    ? (lang === 'ja' ? 1.0 : 0.9)
+    : (lang === 'ja' ? 2.0 : 1.3);
+  const slider = document.getElementById('rate-slider');
+  if (isIOS) { slider.max = '1.5'; }
+  slider.value = defaultRate;
   document.getElementById('rate-val').textContent = defaultRate.toFixed(1);
 }
 
