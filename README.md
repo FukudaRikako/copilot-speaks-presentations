@@ -2,6 +2,8 @@
 
 **Text-to-Speech でプレゼンテーションを自動読み上げ。声の選択、感情表現、プレゼン時間に合わせたスピード調整が可能なブラウザアプリ。**
 
+🌐 **デモサイト**: [https://yellow-meadow-0bb4ebf00.1.azurestaticapps.net/](https://yellow-meadow-0bb4ebf00.1.azurestaticapps.net/)
+
 ---
 
 ## ✨ 主な機能
